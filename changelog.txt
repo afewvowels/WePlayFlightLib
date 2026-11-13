@@ -1,0 +1,36 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.1.5
+Date: 2026-11-13
+  Features:
+    - Flight.orbit options: first_turn ("L"/"R") makes the path start with a turn that way; entry_spread picks a random entry point among those almost as short as the best, so a group doesn't all fly the same line in.
+    - Flight.fly_to option first_turn.
+  Changes:
+    - Tight arcs get more path points (at least one per 0.08 rad), so they turn and bank smoothly instead of in small steps.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.4
+Date: 2026-11-13
+  Bugfixes:
+    - A follower that gets ahead of its slot no longer loops back around to it. It eases off to half speed and lets the formation catch up.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.3
+Date: 2026-11-13
+  Changes:
+    - Followers steer like planes: they keep moving and turn no tighter than follow_turn_radius (6 tiles), so a wingman joining from the wrong direction swings round in an arc instead of snapping around.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.2
+Date: 2026-11-13
+  Bugfixes:
+    - Fixed heading and bank frames flickering back and forth in tight turns and formation flying: a frame now only changes once the drone is clearly past the halfway point to the next one.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.1
+Date: 2026-11-13
+  Features:
+    - split_banks option: one animation per bank ("<name>-0", "<name>-1", ...), since Factorio animations can't have more than 255 frames.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+Date: 2026-11-13
+  Features:
+    - First release. Flight code from Long Haul Logistics 1.0.2: runway takeoffs and landings, turn-radius paths, speed and altitude profiles, shadows, squeeze banking, map dots and flying sounds.
+    - Circling: fly to the best entry point on a circle, then orbit it.
+    - Formation flying: followers hold "V" slots behind a leader.
+    - Real bank frames (frame = bank * headings + heading), plus an optional glow layer.

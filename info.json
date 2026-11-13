@@ -1,0 +1,11 @@
+{
+  "name": "WePlayFlightLib",
+  "version": "0.1.5",
+  "title": "WePlay: Flight Library",
+  "author": "afewvowels",
+  "factorio_version": "2.1",
+  "dependencies": [
+    "base >= 2.1"
+  ],
+  "description": "Shared flight code for WePlay airplane mods: runway takeoffs and landings, turn-radius paths, circling, formation flying, altitude, shadows and banking. Does nothing on its own."
+}
