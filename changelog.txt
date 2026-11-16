@@ -1,4 +1,28 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.9
+Date: 2026-11-15
+  Optimizations:
+    - Far fewer API calls per drone per tick: sprite scale and tilt are only written when they change (never, with real bank frames), and render objects are checked for validity once a second and on every redraw instead of every tick.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.8
+Date: 2026-11-15
+  Bugfixes:
+    - Fixed drones crawling at minimum speed for the whole flight when their cruise speed was below
+      about 12 tiles/s: the takeoff and approach speed blends overshot below zero. Slow drones now
+      fly at their cruise speed.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.7
+Date: 2026-11-15
+  Optimizations:
+    - Flights marked hidden (f.hidden = true, for culling) skip all render object updates while still flying.
+    - Hidden map dots are no longer moved, and a shown map dot's validity is only checked on the ticks it moves.
+    - Fewer temporary tables each tick.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.6
+Date: 2026-11-15
+  Features:
+    - Flight.fly_to_pad options first_turn and last_turn ("L"/"R"): make the path start and/or end with a turn that way. Both "R" puts departures and arrivals on opposite circles around each pad, like an airport traffic pattern. Falls back to fewer constraints if a combination can't reach.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.5
 Date: 2026-11-13
   Features:

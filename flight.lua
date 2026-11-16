@@ -28,6 +28,10 @@ Flight.step(f) returns nil, or one of these events:
   "arrived"      an airborne path ended (now cruising straight ahead)
   "orbiting"     the drone reached its circle and started orbiting
   "leader_lost"  a follower's leader was destroyed (now cruising)
+
+Culling: set f.hidden = true for a drone nobody can see and Flight.step keeps
+flying it (and moving its map dot) without updating its render objects. Clear
+it and set f.frame = -1 to have the next step redraw it.
 ------------------------------------------------------------------------------]]
 
 local Flight = {}
@@ -104,11 +108,12 @@ local function turn_delta(from_phi, to_phi, side)
   return (from_phi - to_phi) % TAU
 end
 
--- `first` ("L" or "R", optional) only allows paths that start by turning that way.
-local function best_dubins(p0, d0, p1, d1, R, first)
+-- `first` ("L" or "R", optional) only allows paths that start by turning that way,
+-- and `last` only allows paths that end by turning that way.
+local function best_dubins(p0, d0, p1, d1, R, first, last)
   local best
   for _, a_side in pairs(first and { first } or { "L", "R" }) do
-    for _, b_side in pairs({ "L", "R" }) do
+    for _, b_side in pairs(last and { last } or { "L", "R" }) do
       local c0 = offset(p0, side_normal(d0, a_side), R)
       local c1 = offset(p1, side_normal(d1, b_side), R)
       local wx, wy = c1.x - c0.x, c1.y - c0.y
@@ -137,8 +142,12 @@ local function best_dubins(p0, d0, p1, d1, R, first)
   return best
 end
 
-local function add_dubins(points, p0, d0, p1, d1, R, first)
-  local best = first and best_dubins(p0, d0, p1, d1, R, first) or best_dubins(p0, d0, p1, d1, R)
+local function add_dubins(points, p0, d0, p1, d1, R, first, last)
+  -- Constrained turns when asked, falling back to fewer constraints if that
+  -- combination can't reach (opposite-turn paths need the circles 2R apart).
+  local best = (first or last) and best_dubins(p0, d0, p1, d1, R, first, last)
+    or (first and best_dubins(p0, d0, p1, d1, R, first))
+    or best_dubins(p0, d0, p1, d1, R)
   local function arc(center, side, start_phi, delta)
     -- A point every 2 tiles, and at least every 0.08 rad (under one of 64
     -- headings), so tight arcs turn smoothly instead of in visible steps.
@@ -220,6 +229,7 @@ function Flight.new(o)
       render_mode = "chart",
       visible = o.map.visible ~= false,
     })
+    f.map_visible = o.map.visible ~= false
   end
   Flight.render(f)
   return f
@@ -240,7 +250,11 @@ function Flight.ground(f) return { x = f.pos.x, y = f.pos.y } end
 function Flight.air(f) return { x = f.pos.x, y = f.pos.y - f.altitude } end
 
 function Flight.set_map_visible(f, visible)
-  if f.r_map and f.r_map.valid then f.r_map.visible = visible end
+  f.map_visible = visible
+  if f.r_map and f.r_map.valid then
+    f.r_map.visible = visible
+    if visible then f.r_map.target = { x = f.pos.x, y = f.pos.y } end
+  end
 end
 
 function Flight.set_glow_tint(f, tint)
@@ -281,6 +295,11 @@ end
 --   to_pad, to_dir                the destination pad and the direction it faces;
 --                                 drones touch down at the stripe end, rolling toward the tower
 --   opts.straight = true          skip the fancy path: straight line pad to pad
+--   opts.first_turn, opts.last_turn = "L" / "R"
+--                                 make the path start / end with a turn that way.
+--                                 first_turn = last_turn = "R" (or both "L") puts
+--                                 departures and arrivals on opposite circles around
+--                                 each pad, like an airport traffic pattern
 function Flight.fly_to_pad(f, to_pad, to_dir, opts)
   opts = opts or {}
   local points, roll_up = {}, 0
@@ -301,7 +320,7 @@ function Flight.fly_to_pad(f, to_pad, to_dir, opts)
   end
   local touchdown = offset(to_pad, to_dir, f.runway_front)
   local final = offset(touchdown, to_dir, f.approach)
-  add_dubins(points, p0, d0, final, { x = -to_dir.x, y = -to_dir.y }, f.turn_radius)
+  add_dubins(points, p0, d0, final, { x = -to_dir.x, y = -to_dir.y }, f.turn_radius, opts.first_turn, opts.last_turn)
   points[#points + 1] = touchdown
   points[#points + 1] = offset(to_pad, to_dir, -f.runway_back) -- roll to a stop by the tower
   start_path(f, points, roll_up, dist(touchdown, points[#points]), 0)
@@ -416,13 +435,16 @@ end
 -- Speed and altitude profiles ---------------------------------------------------
 
 -- Speed ramps up on the takeoff roll and down on the approach and landing roll.
+-- The blends toward cruise speed are capped at 1, so a cruise speed slower than
+-- the runway speeds (under ~15 tiles/s) just flies at cruise speed instead of
+-- overshooting below zero.
 local function path_speed(f, p)
   local s, top = p.s, f.speed
   local up
   if p.roll_up > 0 and s < p.roll_up then
     up = 0.05 + 0.2 * (s / p.roll_up)
   elseif p.roll_up > 0 then
-    up = min(top, 0.25 + (top - 0.25) * (s - p.roll_up) / 10)
+    up = 0.25 + (top - 0.25) * min(1, (s - p.roll_up) / 10)
   else
     up = top
   end
@@ -432,10 +454,10 @@ local function path_speed(f, p)
     if r < p.roll_down then
       down = 0.04 + 0.16 * (r / p.roll_down)
     else
-      down = min(top, 0.2 + (top - 0.2) * (r - p.roll_down) / 12)
+      down = 0.2 + (top - 0.2) * min(1, (r - p.roll_down) / 12)
     end
   end
-  return max(0.03, min(up, down))
+  return max(0.03, min(up, down, top))
 end
 
 -- Climbs from the starting altitude to cruise, and descends to the end altitude.
@@ -584,6 +606,8 @@ end
 -- when it hovers right on a boundary (tight turns, formation flying).
 local STICKY = 0.2
 
+local AIR_KEYS = { "r_body", "r_glow" }
+
 function Flight.render(f)
   local headings = f.headings
   local exact = f.heading / TAU * headings
@@ -630,28 +654,48 @@ function Flight.render(f)
     tilt = f.bank_tilt * bank * wx
   end
 
+  -- The map dot, only while it's shown (and only every map_interval ticks).
+  if f.map_visible and f.age % f.map_interval == 0 then
+    local r_map = f.r_map
+    if r_map and r_map.valid then r_map.target = { x = f.pos.x, y = f.pos.y } end
+  end
+
+  -- f.hidden: the mod is culling this drone (nobody near enough to see it). Keep
+  -- the heading and bank state up to date, but don't touch the render objects.
+  if f.hidden then return end
+
   local x, y, alt = f.pos.x + ox, f.pos.y + oy, f.altitude
   local air = { x = x, y = y - alt }
   local changed = frame ~= f.frame
   f.frame = frame
 
-  for _, key in pairs({ "r_body", "r_glow" }) do
+  -- Every render-object read or write is an API call, so only touch what changed:
+  -- positions every tick, frame / scale / tilt only when they differ from what's
+  -- drawn, and validity only on redraws and once a second.
+  local full = changed or f.age % 60 == 0
+  local look = full or sx ~= f.drawn_sx or sy ~= f.drawn_sy or tilt ~= f.drawn_tilt
+  f.drawn_sx, f.drawn_sy, f.drawn_tilt = sx, sy, tilt
+
+  for _, key in pairs(AIR_KEYS) do
     local r = f[key]
-    if r and r.valid then
+    if r and (not full or r.valid) then
       r.target = air
       if changed then r.animation_offset = frame end
-      r.x_scale, r.y_scale = sx, sy
-      r.orientation = tilt % 1
+      if look then
+        r.x_scale, r.y_scale = sx, sy
+        r.orientation = tilt % 1
+      end
+    elseif r then
+      f[key] = nil
     end
   end
   local shadow = f.r_shadow
-  if shadow and shadow.valid then
+  if shadow and (not full or shadow.valid) then
     shadow.target = { x = x + alt * f.shadow_ratio, y = y }
     if changed then shadow.animation_offset = frame end
-    shadow.x_scale, shadow.y_scale = sx, sy
-  end
-  if f.r_map and f.r_map.valid and f.age % f.map_interval == 0 then
-    f.r_map.target = { x = f.pos.x, y = f.pos.y }
+    if look then shadow.x_scale, shadow.y_scale = sx, sy end
+  elseif shadow then
+    f.r_shadow = nil
   end
 end
 
